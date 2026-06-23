@@ -1,27 +1,49 @@
-const CartModel = require("../model/Cart.model");
+import CartModel from "../model/Cart.model.js";
+import Product from "../model/Product.model.js";
+
+// ================= GET CART =================
+export async function getCart(req, res) {
+  try {
+    const items = await CartModel.find({ userId: req.user.id }).populate("productId");
+    res.status(200).json(items);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Error fetching cart" });
+  }
+}
 
 // ================= ADD TO CART =================
-async function addToCart(req, res) {
+export async function addToCart(req, res) {
   try {
     const { productId, quantity } = req.body;
 
-    // validation
     if (!productId || !quantity) {
-      return res.status(400).json({
-        message: "productId and quantity required",
+      return res.status(400).json({ message: "productId and quantity required" });
+    }
+
+    // ⚡ Validate product exists before adding to cart
+    const productExists = await Product.findById(productId);
+    if (!productExists) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+
+    const userId = req.user.id;
+
+    let existingItem = await CartModel.findOne({ userId, productId });
+
+    if (existingItem) {
+      existingItem.quantity += Number(quantity) || 1;
+      await existingItem.save();
+    } else {
+      existingItem = await CartModel.create({
+        productId,
+        quantity: Number(quantity) || 1,
+        userId,
       });
     }
 
-    // user from JWT
-    const userId = req.user.userId;
-
-    const item = await CartModel.create({
-      productId,
-      quantity,
-      userId,
-    });
-
-    res.status(201).json(item);
+    const populatedItem = await CartModel.findById(existingItem._id).populate("productId");
+    res.status(201).json(populatedItem);
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Error adding to cart" });
@@ -29,16 +51,16 @@ async function addToCart(req, res) {
 }
 
 // ================= UPDATE CART =================
-async function updateCart(req, res) {
+export async function updateCart(req, res) {
   try {
     const { id } = req.params;
     const { quantity } = req.body;
 
-    const updated = await CartModel.findByIdAndUpdate(
-      id,
-      { quantity },
+    const updated = await CartModel.findOneAndUpdate(
+      { _id: id, userId: req.user.id },
+      { quantity: Number(quantity) },
       { new: true }
-    );
+    ).populate("productId");
 
     if (!updated) {
       return res.status(404).json({ message: "Cart item not found" });
@@ -47,16 +69,16 @@ async function updateCart(req, res) {
     res.json(updated);
   } catch (err) {
     console.error(err);
-    res.status(400).json({ message: "Invalid ID" });
+    res.status(400).json({ message: "Invalid ID or bad request data" });
   }
 }
 
 // ================= DELETE CART =================
-async function deleteCartItem(req, res) {
+export async function deleteCartItem(req, res) {
   try {
     const { id } = req.params;
 
-    const deleted = await CartModel.findByIdAndDelete(id);
+    const deleted = await CartModel.findOneAndDelete({ _id: id, userId: req.user.id });
 
     if (!deleted) {
       return res.status(404).json({ message: "Item not found" });
@@ -68,9 +90,3 @@ async function deleteCartItem(req, res) {
     res.status(400).json({ message: "Invalid ID" });
   }
 }
-
-module.exports = {
-  addToCart,
-  updateCart,
-  deleteCartItem,
-};

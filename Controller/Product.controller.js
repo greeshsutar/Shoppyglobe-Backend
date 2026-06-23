@@ -1,27 +1,39 @@
-const Product = require("../model/Product.model");
-const axios = require("axios");
+import Product from "../model/Product.model.js"; 
+import axios from "axios";
 
 // ================= SAVE PRODUCTS =================
-async function saveProducts(req, res) {
+export async function saveProducts(req, res) {
   try {
-    // Optional: prevent duplicate insert
     const existing = await Product.countDocuments();
     if (existing > 0) {
       return res.status(400).json({ message: "Products already exist in DB" });
     }
 
     const response = await axios.get("https://dummyjson.com/products");
-
     const products = response.data.products;
 
-    const formatted = products.map((item) => ({
-      name: item.title,
-      price: item.price,
-      description: item.description,
-      image: item.thumbnail,
-      category: item.category,
-      stock: item.stock,
-    }));
+    const formatted = products.map((item) => {
+      // ⚡ FIX: Fallback to the first element of images array if thumbnail is broken or truncated
+      let imageUrl = item.thumbnail;
+      if (!imageUrl && item.images && item.images.length > 0) {
+        imageUrl = item.images[0];
+      }
+
+      // ⚡ CLEANUP: If there is a hidden truncation char, reconstruct the string cleanly
+      if (imageUrl && (imageUrl.includes("…") || imageUrl.includes("..."))) {
+        const cleanTitle = encodeURIComponent(item.title);
+        imageUrl = `https://cdn.dummyjson.com/products/images/${item.category}/${cleanTitle}/thumbnail.png`;
+      }
+
+      return {
+        name: item.title, 
+        price: item.price,
+        description: item.description,
+        image: imageUrl || "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?w=500", // Safe generic baseline fallback
+        category: item.category,
+        stock: item.stock,
+      };
+    });
 
     await Product.insertMany(formatted);
 
@@ -33,7 +45,7 @@ async function saveProducts(req, res) {
 }
 
 // ================= GET ALL PRODUCTS =================
-async function getProducts(req, res) {
+export async function getProducts(req, res) {
   try {
     const products = await Product.find();
     res.status(200).json(products);
@@ -44,10 +56,9 @@ async function getProducts(req, res) {
 }
 
 // ================= GET PRODUCT BY ID =================
-async function getProductById(req, res) {
+export async function getProductById(req, res) {
   try {
     const { id } = req.params;
-
     const product = await Product.findById(id);
 
     if (!product) {
@@ -60,9 +71,3 @@ async function getProductById(req, res) {
     res.status(400).json({ message: "Invalid product ID" });
   }
 }
-
-module.exports = {
-  saveProducts,
-  getProducts,
-  getProductById,
-};
